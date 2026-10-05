@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app.auth import CurrentUser
-from app.cors import configure_cors
+from app.cors import configure_cors, wrap_cors
 from app.routes.analyses import delete_analysis
 
 
@@ -55,6 +55,24 @@ class AnalysisDeleteCheck(TestCase):
             "http://localhost:8080",
         )
         self.assertIn("DELETE", response.headers["access-control-allow-methods"])
+
+    def test_cors_headers_are_added_to_unhandled_error_responses(self):
+        cors_test_app = FastAPI()
+
+        @cors_test_app.get("/failure")
+        def fail():
+            raise RuntimeError("simulated internal error")
+
+        response = TestClient(
+            wrap_cors(cors_test_app),
+            raise_server_exceptions=False,
+        ).get("/failure", headers={"Origin": "http://localhost:8080"})
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.headers["access-control-allow-origin"],
+            "http://localhost:8080",
+        )
 
     def make_user(self, user_id, role):
         return CurrentUser(

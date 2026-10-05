@@ -3,12 +3,11 @@ import time
 from fastapi import FastAPI
 from fastapi import Request
 
-from app.cors import configure_cors
+from app.cors import wrap_cors
 from app.routes import analyses, auth as auth_routes, detection, health, operations, research
 from app.services.request_metrics import record_request
 
 app = FastAPI(title="API de Detecção - Armas e Ferramentas")
-configure_cors(app)
 
 
 @app.middleware("http")
@@ -43,3 +42,6 @@ app.add_api_route("/detect", detection.detect_objects, methods=["POST"])
 @app.get("/health")
 def root_health_check():
     return {"status": "ok", "service": "SIDA-Caála Backend"}
+
+
+app = wrap_cors(app)
