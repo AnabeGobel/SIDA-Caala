@@ -1,0 +1,54 @@
+# Secrets and local environment files
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.example.*
+
+# Python environments, bytecode, and test/tool caches
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# JavaScript dependencies and generated builds
+node_modules/
+dist/
+coverage/
+FrontEnd/.output/
+FrontEnd/.vinxi/
+FrontEnd/.tanstack/
+FrontEnd/.wrangler/
+
+# Runtime logs and local databases
+*.log
+*.sqlite
+*.sqlite3
+*.db
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Downloaded general-purpose YOLO weights; keep the project checkpoints in
+# backend/models/best.pt and backend/models/best2.pt.
+/backend/yolov*.pt
+/backend/Imagens/best.pt
+
+# Generated training artifacts and datasets (the inspection images in
+# backend/Imagens remain included).
+/backend/runs/
+/backend/wandb/
+/backend/datasets/
