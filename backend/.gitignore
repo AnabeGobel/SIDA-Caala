@@ -1,4 +1,4 @@
-# Environment credentials; keep only non-secret example files in Git.
+# Ignore local credentials and example templates from the repository.
 .env
 .env.*
 .env.example

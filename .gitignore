@@ -2,6 +2,8 @@
 .env
 .env.*
 .env.example
+FrontEnd/.env.example
+backend/.env.example
 
 # Python environments, bytecode, and test/tool caches
 .venv/
@@ -23,6 +25,7 @@ node_modules/
 dist/
 coverage/
 FrontEnd/.output/
+
 FrontEnd/.vinxi/
 FrontEnd/.tanstack/
 FrontEnd/.wrangler/
