@@ -15,7 +15,7 @@ import {
   Upload,
   Users,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { roleHome, type UserRole } from "@/lib/auth-core";
 import { useAuth } from "@/lib/use-auth";
 import { supabase } from "@/lib/supabase";
@@ -103,7 +103,16 @@ export function AppLayout({
   const { session, profile, loading } = useAuth();
   const [aberto, setAberto] = useState(true);
   const [agora, setAgora] = useState<Date | null>(null);
+  const menuRef = useRef<HTMLElement>(null);
+  const menuToggleRef = useRef<HTMLButtonElement>(null);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  function fecharMenu() {
+    if (menuRef.current?.contains(document.activeElement)) {
+      menuToggleRef.current?.focus();
+    }
+    setAberto(false);
+  }
 
   useEffect(() => {
     const atualizarRelogio = () => setAgora(new Date());
@@ -145,6 +154,7 @@ export function AppLayout({
   return (
     <div className="flex min-h-screen bg-background">
       <aside
+        ref={menuRef}
         id="app-navigation"
         aria-hidden={!aberto}
         inert={!aberto}
@@ -173,7 +183,7 @@ export function AppLayout({
               <Link
                 key={to}
                 to={to}
-                onClick={() => setAberto(false)}
+                onClick={fecharMenu}
                 className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
                   activo
                     ? "bg-sidebar-primary text-sidebar-primary-foreground"
@@ -187,7 +197,7 @@ export function AppLayout({
           })}
           <button
             onClick={() => {
-              setAberto(false);
+              fecharMenu();
               void supabase?.auth.signOut().then(() => navigate({ to: "/" }));
             }}
             className="mt-1 flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
@@ -213,7 +223,7 @@ export function AppLayout({
         <button
           type="button"
           aria-label="Fechar menu"
-          onClick={() => setAberto(false)}
+          onClick={fecharMenu}
           className="fixed inset-0 z-30 bg-black/40 md:hidden"
         />
       ) : null}
@@ -221,6 +231,7 @@ export function AppLayout({
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex min-w-0 items-center justify-between gap-3 border-b border-border px-4 py-3 md:px-6">
           <button
+            ref={menuToggleRef}
             onClick={() => setAberto((v) => !v)}
             aria-label="Alternar menu"
             aria-expanded={aberto}
