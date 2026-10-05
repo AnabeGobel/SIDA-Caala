@@ -1,9 +1,7 @@
 # Environment credentials; keep only non-secret example files in Git.
 .env
 .env.*
-!.env.example
-!.env.*.example
-!.env.example.*
+.env.example
 
 # Python environments and generated files
 .venv/

@@ -10,9 +10,7 @@ coverage/
 # Local environment and secrets
 .env
 .env.*
-!.env.example
-!.env.*.example
-!.env.example.*
+.env.example
 *.local
 
 # Development platform output
