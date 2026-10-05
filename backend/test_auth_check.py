@@ -4,9 +4,12 @@ from unittest.mock import patch
 
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from app.auth import CurrentUser, get_current_user, require_roles
-from app.routes.auth import admin_router
+from app.config import settings
+from app.routes.auth import admin_router, password_reset_redirect_url
+from app.config import settings
 
 
 PROFILES = {
@@ -106,6 +109,65 @@ class AuthorizationCheck(TestCase):
 
     def test_admin_api_requires_token(self):
         self.assertEqual(self.client.get("/api/admin/users").status_code, 401)
+
+
+class PasswordResetRedirectCheck(TestCase):
+    def make_request(self, origin: str) -> Request:
+        return Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/",
+                "headers": [(b"origin", origin.encode())],
+            }
+        )
+
+    def test_uses_allowed_deployed_frontend_origin(self):
+        with (
+            patch.object(
+                settings,
+                "CORS_ORIGINS",
+                "http://localhost:8080,https://sida-caala.vercel.app",
+            ),
+            patch.object(settings, "FRONTEND_URL", "http://localhost:8080"),
+        ):
+            redirect_url = password_reset_redirect_url(
+                self.make_request("https://sida-caala.vercel.app")
+            )
+
+        self.assertEqual(
+            redirect_url,
+            "https://sida-caala.vercel.app/redefinir-senha",
+        )
+
+    def test_uses_local_frontend_origin_when_allowed(self):
+        with (
+            patch.object(
+                settings,
+                "CORS_ORIGINS",
+                "http://localhost:8080,https://sida-caala.vercel.app",
+            ),
+            patch.object(settings, "FRONTEND_URL", "https://sida-caala.vercel.app"),
+        ):
+            redirect_url = password_reset_redirect_url(
+                self.make_request("http://localhost:8080")
+            )
+
+        self.assertEqual(redirect_url, "http://localhost:8080/redefinir-senha")
+
+    def test_untrusted_origin_falls_back_to_configured_frontend(self):
+        with (
+            patch.object(settings, "CORS_ORIGINS", "https://sida-caala.vercel.app"),
+            patch.object(settings, "FRONTEND_URL", "https://sida-caala.vercel.app"),
+        ):
+            redirect_url = password_reset_redirect_url(
+                self.make_request("https://malicious.example")
+            )
+
+        self.assertEqual(
+            redirect_url,
+            "https://sida-caala.vercel.app/redefinir-senha",
+        )
 
 
 if __name__ == "__main__":

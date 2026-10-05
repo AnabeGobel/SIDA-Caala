@@ -15,7 +15,7 @@ import type { Analise } from "@/lib/detection";
 import { traduzirClasse } from "@/lib/detection";
 import { apiRequest } from "@/lib/auth-core";
 import { useAuth } from "@/lib/use-auth";
-import { getConfig, setConfig, useStore } from "@/lib/store";
+import { getConfig, guardarAnalise, setConfig, useStore } from "@/lib/store";
 
 export const Route = createFileRoute("/simulacao")({
   head: () => ({
@@ -62,32 +62,19 @@ function Simulacao() {
   const [config] = useStore(useCallback(() => getConfig(), []));
   const { session } = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const resultadoVideoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const aLigarCamera = useRef(false);
-  const montadoRef = useRef(true);
-  const [dispositivos, setDispositivos] = useState<MediaDeviceInfo[]>([]);
-  const [dispositivoId, setDispositivoId] = useState("");
   const frameEmAnalise = useRef(false);
-  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [modo, setModo] = useState<ModoFonte>("imagem");
   const [fonte, setFonte] = useState<Fonte | null>(null);
   const [resultado, setResultado] = useState<Analise | null>(null);
   const [limiar, setLimiar] = useState(config.limiar);
   const [cameraAtiva, setCameraAtiva] = useState(false);
-  const [cameraPronta, setCameraPronta] = useState(false);
   const [cameraErro, setCameraErro] = useState<string | null>(null);
   const [tempoRealActivo, setTempoRealActivo] = useState(false);
   const [aAnalisar, setAAnalisar] = useState(false);
   const [erroAnalise, setErroAnalise] = useState<string | null>(null);
-
-  function marcarPronta(event: React.SyntheticEvent<HTMLVideoElement>) {
-    const video = event.currentTarget;
-    if (video.videoWidth > 0 && video.videoHeight > 0) {
-      setCameraPronta(true);
-      setCameraErro(null);
-    }
-  }
 
   const prepararFonte = useCallback(
     (nextFonte: Fonte, limparResultado = true) => {
@@ -163,7 +150,6 @@ function Simulacao() {
           `/detect?conf_threshold=${encodeURIComponent(limiar)}`,
           { method: "POST", body },
         );
-        const tempoMs = Math.max(0, response.inference_ms);
         const deteccoes = response.detections.map((deteccao) => {
           const xMin = Math.max(
             0,
@@ -195,7 +181,7 @@ function Simulacao() {
           criadoEm: response.created_at,
           limiar,
           fps: response.fps,
-          tempoMs,
+          tempoMs: response.inference_ms,
           deteccoes,
           alerta: deteccoes.some((deteccao) => deteccao.aceite),
         });
@@ -220,211 +206,76 @@ function Simulacao() {
     if (fonte) await analizarFonte(fonte);
   }
 
-  async function ligarCamera(deviceId?: string) {
+  async function ligarCamera() {
     if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraErro(
-        "A câmera não está disponível. Usa HTTPS ou localhost e confirma as permissões do navegador.",
-      );
+      setCameraErro("Este navegador não suporta acesso à câmera.");
       return;
     }
-    // Evita abrir duas streams em simultâneo (cliques duplos) — a primeira
-    // ficaria presa e a câmera mostraria preto/cinza.
-    if (aLigarCamera.current) return;
-    aLigarCamera.current = true;
 
     try {
       setCameraErro(null);
-      setCameraPronta(false);
-      setModo("camera");
-
-      // Liberta qualquer stream anterior antes de pedir outra.
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-
-      const idEscolhido = deviceId ?? dispositivoId;
-      const tentativas: MediaStreamConstraints[] = [
-        {
-          video: idEscolhido
-            ? {
-                deviceId: { exact: idEscolhido },
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-              }
-            : { width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false,
-        },
-        { video: true, audio: false },
-      ];
-
-      let stream: MediaStream | null = null;
-      let ultimoErro: unknown = null;
-      for (const constraints of tentativas) {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia(constraints);
-          break;
-        } catch (err) {
-          ultimoErro = err;
-          const nome = err instanceof Error ? err.name : "";
-          // Só vale a pena tentar a configuração simples se foi um problema de constraints.
-          if (nome !== "OverconstrainedError" && nome !== "NotFoundError")
-            break;
-        }
-      }
-      if (!stream) throw ultimoErro;
-
-      // Se o componente foi desmontado durante o pedido de permissão, não deixar a câmera ligada.
-      if (!montadoRef.current) {
-        stream.getTracks().forEach((track) => track.stop());
-        return;
-      }
-
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false,
+      });
       streamRef.current = stream;
-      setCameraStream(stream);
       setCameraAtiva(true);
-
-      // Depois da permissão, os nomes das câmeras já ficam disponíveis.
-      try {
-        const lista = await navigator.mediaDevices.enumerateDevices();
-        setDispositivos(lista.filter((d) => d.kind === "videoinput"));
-        const atual = stream.getVideoTracks()[0]?.getSettings().deviceId;
-        if (atual) setDispositivoId(atual);
-      } catch {
-        /* a lista de câmeras é opcional */
-      }
-    } catch (error) {
-      const cameraError = error instanceof Error ? error.name : "";
-      const message =
-        cameraError === "NotAllowedError" || cameraError === "SecurityError"
-          ? "Acesso à câmera bloqueado. Permite o acesso nas definições do navegador e usa HTTPS ou localhost."
-          : cameraError === "NotFoundError"
-            ? "Não foi encontrada nenhuma câmera ligada a este dispositivo."
-            : cameraError === "NotReadableError"
-              ? "A câmera está a ser usada por outra aplicação ou separador. Fecha-a e tenta novamente."
-              : cameraError === "OverconstrainedError"
-                ? "A câmera não suporta a configuração pedida. Verifica o dispositivo e tenta novamente."
-                : `Não foi possível iniciar a câmera${error instanceof Error ? `: ${error.message}` : "."}`;
-      setCameraErro(message);
+      setModo("camera");
+    } catch {
+      setCameraErro(
+        "Não foi possível ligar a câmera. Verifique as permissões do navegador.",
+      );
       setCameraAtiva(false);
-      setCameraPronta(false);
-      setCameraStream(null);
-      streamRef.current = null;
-    } finally {
-      aLigarCamera.current = false;
     }
   }
 
   const desligarCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
-    setCameraStream(null);
     if (videoRef.current) {
       videoRef.current.pause();
       videoRef.current.srcObject = null;
     }
     setCameraAtiva(false);
-    setCameraPronta(false);
     setTempoRealActivo(false);
   }, []);
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!cameraAtiva || modo !== "camera" || !video || !cameraStream) return;
+    const stream = streamRef.current;
+    if (!cameraAtiva || modo !== "camera" || !video || !stream) return;
 
-    const temImagem = () =>
-      video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
-      video.videoWidth > 0 &&
-      video.videoHeight > 0;
-
-    const [track] = cameraStream.getVideoTracks();
-    const handleEnded = () => {
-      setCameraErro("A ligação da câmera foi interrompida.");
-      setCameraAtiva(false);
-      setCameraPronta(false);
-      setTempoRealActivo(false);
-    };
-    const handleMute = () => {
-      setCameraPronta(false);
-      setCameraErro(
-        "A câmera está ligada, mas não está a enviar imagem. Verifica se a lente está tapada ou se outro programa está a usar o dispositivo.",
-      );
-    };
-    const handleUnmute = () => {
-      setCameraErro(null);
-      if (temImagem()) setCameraPronta(true);
-    };
-    track?.addEventListener("ended", handleEnded);
-    track?.addEventListener("mute", handleMute);
-    track?.addEventListener("unmute", handleUnmute);
-
-    // Só reatribui se for uma stream diferente (evita AbortError no play()).
-    if (video.srcObject !== cameraStream) {
-      video.srcObject = cameraStream;
-    }
-    video.muted = true;
-    void video
-      .play()
-      .then(() => {
-        if (temImagem()) {
-          setCameraPronta(true);
-          setCameraErro(null);
-        }
-      })
-      .catch((err: unknown) => {
-        // AbortError acontece quando o srcObject muda durante o play(); não é um erro real.
-        if (err instanceof Error && err.name === "AbortError") return;
-        setCameraPronta(false);
-        setCameraErro(
-          "O navegador bloqueou a reprodução da câmera. Confirma as permissões e tenta ligar novamente.",
-        );
-      });
-
-    const frameTimeout = window.setTimeout(() => {
-      if (!temImagem()) {
-        setCameraPronta(false);
-        setCameraErro(
-          "A câmera foi ligada, mas não enviou imagem. Se o portátil tem mais de uma câmera (ex.: infravermelhos ou virtual), escolhe outra na lista abaixo.",
-        );
-      }
-    }, 5000);
-    return () => {
-      window.clearTimeout(frameTimeout);
-      track?.removeEventListener("ended", handleEnded);
-      track?.removeEventListener("mute", handleMute);
-      track?.removeEventListener("unmute", handleUnmute);
-    };
-  }, [cameraAtiva, cameraStream, modo]);
+    video.srcObject = stream;
+    void video.play().catch(() => {
+      setCameraErro("Não foi possível reproduzir o vídeo da câmera.");
+    });
+  }, [cameraAtiva, modo]);
 
   useEffect(() => {
-    montadoRef.current = true;
-    return () => {
-      montadoRef.current = false;
-      desligarCamera();
-    };
+    const video = resultadoVideoRef.current;
+    const stream = streamRef.current;
+    if (!cameraAtiva || modo !== "camera" || !fonte || !video || !stream)
+      return;
+
+    video.srcObject = stream;
+    void video.play().catch(() => {
+      setCameraErro("Não foi possível reproduzir o vídeo da câmara.");
+    });
+  }, [cameraAtiva, fonte !== null, modo]);
+
+  useEffect(() => {
+    return desligarCamera;
   }, [desligarCamera]);
 
   const capturarFrameCamera = useCallback(async () => {
-    if (!videoRef.current || !cameraAtiva || !cameraStream) {
-      setErroAnalise("Liga a câmera antes de solicitar uma análise.");
-      return;
-    }
-    if (frameEmAnalise.current) return;
+    if (!videoRef.current || !cameraAtiva || frameEmAnalise.current) return;
     const video = videoRef.current;
-    if (
-      !cameraPronta ||
-      video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
-      video.videoWidth === 0 ||
-      video.videoHeight === 0
-    ) {
-      setErroAnalise(
-        "A câmera ainda está a iniciar. Aguarda a imagem aparecer e tenta novamente.",
-      );
-      return;
-    }
+    if (video.readyState < 2) return;
     frameEmAnalise.current = true;
     try {
       const canvas = document.createElement("canvas");
-      const largura = video.videoWidth;
-      const altura = video.videoHeight;
+      const largura = video.videoWidth || 640;
+      const altura = video.videoHeight || 480;
       canvas.width = largura;
       canvas.height = altura;
       const context = canvas.getContext("2d");
@@ -456,21 +307,13 @@ function Simulacao() {
     } finally {
       frameEmAnalise.current = false;
     }
-  }, [
-    analizarFonte,
-    cameraAtiva,
-    cameraPronta,
-    cameraStream,
-    prepararFonte,
-    tempoRealActivo,
-  ]);
+  }, [analizarFonte, cameraAtiva, prepararFonte, tempoRealActivo]);
 
   useEffect(() => {
-    if (!tempoRealActivo || !cameraAtiva || !cameraPronta || modo !== "camera")
-      return;
+    if (!tempoRealActivo || !cameraAtiva || modo !== "camera") return;
     const id = window.setInterval(() => void capturarFrameCamera(), 1200);
     return () => window.clearInterval(id);
-  }, [cameraAtiva, cameraPronta, capturarFrameCamera, modo, tempoRealActivo]);
+  }, [cameraAtiva, capturarFrameCamera, modo, tempoRealActivo]);
 
   return (
     <AppLayout
@@ -478,8 +321,8 @@ function Simulacao() {
       subtitulo="Upload de imagem RX ou captura em tempo real para inferência"
       allowedRoles={["operador", "admin", "investigador"]}
     >
-      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-        <section className="panel min-w-0 p-5">
+      <div className="grid gap-5 lg:grid-cols-2">
+        <section className="panel p-5">
           <div className="flex flex-col gap-3 sm:flex-row">
             <button
               type="button"
@@ -523,7 +366,7 @@ function Simulacao() {
                   if (f) carregar(f);
                 }}
                 onClick={() => inputRef.current?.click()}
-                className="mt-4 cursor-pointer rounded-xl border-2 border-dashed border-border bg-muted/30 p-6 text-center transition-colors hover:border-primary hover:bg-accent/40 sm:p-8"
+                className="mt-4 cursor-pointer rounded-xl border-2 border-dashed border-border p-10 text-center transition-colors hover:border-primary"
               >
                 <Upload className="mx-auto size-8 text-muted-foreground" />
                 <p className="mt-3 text-sm font-medium">
@@ -556,55 +399,19 @@ function Simulacao() {
               <h2 className="mt-5 text-lg font-semibold">
                 1. Câmara em tempo real
               </h2>
-              <div className="relative mt-4 h-72 overflow-hidden rounded-xl border border-border bg-black">
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  muted
-                  playsInline
-                  onLoadedData={marcarPronta}
-                  onCanPlay={marcarPronta}
-                  onPlaying={marcarPronta}
-                  onResize={marcarPronta}
-                  onWaiting={() => {
-                    setCameraPronta(false);
-                  }}
-                  onError={() => {
-                    setCameraPronta(false);
-                    setCameraErro(
-                      "Não foi possível apresentar a imagem da câmera neste navegador.",
-                    );
-                  }}
-                  className={`h-full w-full object-contain ${
-                    cameraAtiva ? "block" : "hidden"
-                  }`}
-                />
-                {!cameraAtiva && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted px-6 text-center text-sm text-muted-foreground">
-                    <>A câmara está desligada. Liga-a para ver a imagem.</>
-                  </div>
-                )}
-                {cameraAtiva && !cameraPronta && (
-                  <span
-                    role="status"
-                    className="absolute bottom-3 left-3 flex items-center gap-2 rounded-md bg-black/70 px-3 py-2 text-xs text-white"
-                  >
-                    <Loader2 className="size-4 animate-spin" />A aguardar imagem
-                    da câmera…
-                  </span>
-                )}
-                {cameraAtiva && cameraPronta && (
-                  <span className="absolute left-3 top-3 rounded-md bg-success px-2 py-1 text-xs font-bold text-white">
-                    AO VIVO
-                  </span>
-                )}
-                {aAnalisar && modo === "camera" && (
-                  <div
-                    role="status"
-                    className="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-black/75 px-4 py-3 text-sm font-medium text-white"
-                  >
-                    <Loader2 className="size-4 animate-spin" />A analisar o
-                    frame capturado…
+              <div className="mt-4 overflow-hidden rounded-xl border border-border bg-black">
+                {cameraAtiva ? (
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    className="h-72 w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-72 items-center justify-center px-6 text-center text-sm text-muted-foreground">
+                    A câmara ainda não está ligada. Ative-a para começar a
+                    análise.
                   </div>
                 )}
               </div>
@@ -624,56 +431,21 @@ function Simulacao() {
                     Ligar câmera
                   </button>
                 ) : (
-                  <>
-                    <button
-                      type="button"
-                      disabled={!cameraPronta}
-                      onClick={() => setTempoRealActivo((v) => !v)}
-                      className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
-                    >
-                      {tempoRealActivo ? (
-                        <Pause className="size-4" />
-                      ) : (
-                        <Play className="size-4" />
-                      )}
-                      {tempoRealActivo
-                        ? "Pausar análise"
-                        : "Iniciar análise em tempo real"}
-                    </button>
-                    {cameraErro ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          desligarCamera();
-                          void ligarCamera();
-                        }}
-                        className="rounded-lg border border-border px-4 py-2.5 text-sm font-medium"
-                      >
-                        Tentar ligar novamente
-                      </button>
-                    ) : null}
-                  </>
-                )}
-
-                {cameraAtiva && dispositivos.length > 1 ? (
-                  <select
-                    value={dispositivoId}
-                    onChange={(e) => {
-                      const id = e.target.value;
-                      setDispositivoId(id);
-                      desligarCamera();
-                      void ligarCamera(id);
-                    }}
-                    aria-label="Escolher câmera"
-                    className="rounded-lg border border-border bg-background px-3 py-2.5 text-sm"
+                  <button
+                    type="button"
+                    onClick={() => setTempoRealActivo((v) => !v)}
+                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
                   >
-                    {dispositivos.map((d, i) => (
-                      <option key={d.deviceId || i} value={d.deviceId}>
-                        {d.label || `Câmera ${i + 1}`}
-                      </option>
-                    ))}
-                  </select>
-                ) : null}
+                    {tempoRealActivo ? (
+                      <Pause className="size-4" />
+                    ) : (
+                      <Play className="size-4" />
+                    )}
+                    {tempoRealActivo
+                      ? "Pausar análise"
+                      : "Iniciar análise em tempo real"}
+                  </button>
+                )}
 
                 {cameraAtiva ? (
                   <button
@@ -712,10 +484,7 @@ function Simulacao() {
           </div>
 
           <button
-            disabled={
-              aAnalisar ||
-              (modo === "imagem" ? !fonte : !cameraAtiva || !cameraPronta)
-            }
+            disabled={aAnalisar || (modo === "imagem" ? !fonte : !cameraAtiva)}
             onClick={analisar}
             className="mt-6 w-full rounded-lg bg-primary py-3 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
           >
@@ -741,7 +510,7 @@ function Simulacao() {
             </p>
           ) : resultado ? (
             <p role="status" className="mt-4 text-sm text-success">
-              Análise concluída e guardada no banco de dados.
+              Análise concluída pelo modelo YOLO.
             </p>
           ) : null}
         </section>
@@ -767,91 +536,75 @@ function Simulacao() {
             </div>
           ) : null}
 
-          <div className="panel min-w-0 p-5">
+          <div className="panel p-5">
             <h2 className="text-lg font-semibold">
               2. Resultado da inferência
             </h2>
             {fonte ? (
-              <>
-                <p role="status" className="mt-2 text-sm text-muted-foreground">
-                  {aAnalisar
-                    ? "A analisar esta captura…"
-                    : resultado?.imagemDataUrl === fonte.url
-                      ? `Captura analisada: ${resultado.deteccoes.length} deteção(ões).`
-                      : "Pré-visualização da imagem selecionada."}
-                </p>
-                <DetectionCanvas
-                  src={fonte.url}
-                  deteccoes={
-                    resultado?.imagemDataUrl === fonte.url
-                      ? resultado.deteccoes
-                      : []
-                  }
-                  className="mt-4"
-                />
-              </>
+              <DetectionCanvas
+                src={fonte.url}
+                deteccoes={resultado?.deteccoes ?? []}
+                className="mt-4"
+                mode={
+                  fonte.tipo === "camera" && cameraAtiva ? "video" : "image"
+                }
+                videoRef={resultadoVideoRef}
+              />
             ) : (
-              <p className="mt-4 rounded-xl border border-dashed border-border bg-muted/30 p-6 text-center text-sm text-muted-foreground">
-                {cameraAtiva
-                  ? "Câmara ao vivo no painel à esquerda. Seleciona «Analisar frame atual» para ver aqui a captura analisada."
-                  : "Nenhuma imagem disponível. Carrega uma imagem ou liga a câmara."}
+              <p className="mt-4 rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
+                Nenhuma imagem ou feed da câmara disponível.
               </p>
             )}
 
             {resultado ? (
               <>
-                <div className="mt-5 overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border text-left text-muted-foreground">
-                        <th className="py-2 font-medium">Classe</th>
-                        <th className="py-2 font-medium">Confiança</th>
-                        <th className="py-2 font-medium">
-                          Coordenadas (x, y, w, h)
-                        </th>
-                        <th className="py-2 font-medium">Estado</th>
+                <table className="mt-5 w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-muted-foreground">
+                      <th className="py-2 font-medium">Classe</th>
+                      <th className="py-2 font-medium">Confiança</th>
+                      <th className="py-2 font-medium">
+                        Coordenadas (x, y, w, h)
+                      </th>
+                      <th className="py-2 font-medium">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resultado.deteccoes.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-4 text-muted-foreground">
+                          Nenhum objeto detectado nesta imagem.
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {resultado.deteccoes.length === 0 ? (
-                        <tr>
+                    ) : (
+                      resultado.deteccoes.map((d, i) => (
+                        <tr key={i} className="border-b border-border/60">
+                          <td className="py-2">{d.classe}</td>
+                          <td className="py-2">
+                            {(d.confianca * 100).toFixed(1)}%
+                          </td>
+                          <td className="py-2 text-xs text-muted-foreground">
+                            {d.box.x.toFixed(2)}, {d.box.y.toFixed(2)},{" "}
+                            {d.box.w.toFixed(2)}, {d.box.h.toFixed(2)}
+                          </td>
                           <td
-                            colSpan={4}
-                            className="py-4 text-muted-foreground"
+                            className={`py-2 ${d.aceite ? "text-success" : "text-muted-foreground"}`}
                           >
-                            Nenhum objeto detectado nesta imagem.
+                            {d.aceite ? "Aceite" : "Descartada"}
                           </td>
                         </tr>
-                      ) : (
-                        resultado.deteccoes.map((d, i) => (
-                          <tr key={i} className="border-b border-border/60">
-                            <td className="py-2">{d.classe}</td>
-                            <td className="py-2">
-                              {(d.confianca * 100).toFixed(1)}%
-                            </td>
-                            <td className="py-2 text-xs text-muted-foreground">
-                              {d.box.x.toFixed(2)}, {d.box.y.toFixed(2)},{" "}
-                              {d.box.w.toFixed(2)}, {d.box.h.toFixed(2)}
-                            </td>
-                            <td
-                              className={`py-2 ${d.aceite ? "text-success" : "text-muted-foreground"}`}
-                            >
-                              {d.aceite ? "Aceite" : "Descartada"}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                      ))
+                    )}
+                  </tbody>
+                </table>
 
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
                   <span>
                     Tempo de inferência: {resultado.tempoMs} ms ·{" "}
                     {resultado.fps} FPS · limiar {resultado.limiar.toFixed(2)}
                   </span>
-                  <span className="text-success">
-                    Registo persistido automaticamente
+                  <span className="text-sm font-medium text-success">
+                    Registado automaticamente no histórico
                   </span>
                 </div>
               </>

@@ -1,15 +1,6 @@
-export type ModelClass =
-  | "Chave inglesa ajustável"
-  | "Alicate"
-  | "Arma branca"
-  | "Arma de fogo"
-  | "Chave de fendas"
-  | "Faca"
-  | "Pistola"
-  | "Rifles"
-  | "Tesoura"
-  | "Chave inglesa";
-export type DetectionClass = ModelClass | "Objeto desconhecido";
+export type WeaponClass =
+  "Arma de fogo" | "Faca" | "Alicate" | "Tesoura" | "Chave inglesa";
+export type DetectionClass = WeaponClass | "Objeto desconhecido";
 
 export type Detection = {
   classe: DetectionClass;
@@ -30,59 +21,37 @@ export type Analise = {
   alerta: boolean;
 };
 
-export const CLASSES: ModelClass[] = [
-  "Chave inglesa ajustável",
-  "Alicate",
-  "Arma branca",
+export const CLASSES: WeaponClass[] = [
   "Arma de fogo",
-  "Chave de fendas",
   "Faca",
-  "Pistola",
-  "Rifles",
+  "Alicate",
   "Tesoura",
   "Chave inglesa",
 ];
 
-export const CLASSE_TIPO: Record<
-  DetectionClass,
-  "fogo" | "branca" | "ferramenta" | "desconhecida"
-> = {
-  "Chave inglesa ajustável": "ferramenta",
-  Alicate: "ferramenta",
-  "Arma branca": "branca",
+export const CLASSE_TIPO: Record<string, "fogo" | "branca"> = {
   "Arma de fogo": "fogo",
-  "Chave de fendas": "ferramenta",
   Faca: "branca",
-  Pistola: "fogo",
-  Rifles: "fogo",
+  Alicate: "branca",
   Tesoura: "branca",
-  "Chave inglesa": "ferramenta",
-  "Objeto desconhecido": "desconhecida",
+  "Chave inglesa": "branca",
 };
 
-const CLASSES_NORMALIZADAS: Record<string, ModelClass> = {
+const CLASSES_NORMALIZADAS: Record<string, WeaponClass> = {
   armadefogo: "Arma de fogo",
   firearm: "Arma de fogo",
   gun: "Arma de fogo",
-  pistol: "Pistola",
-  pistola: "Pistola",
-  rifle: "Rifles",
-  rifles: "Rifles",
+  pistol: "Arma de fogo",
+  pistola: "Arma de fogo",
   faca: "Faca",
   knife: "Faca",
-  armabranca: "Arma branca",
   alicate: "Alicate",
   pliers: "Alicate",
-  destornillador: "Chave de fendas",
-  screwdriver: "Chave de fendas",
-  chavedefendas: "Chave de fendas",
-  chaveinglesa: "Chave inglesa ajustável",
-  adjustablewrench: "Chave inglesa ajustável",
-  wrench: "Chave inglesa",
-  spanner: "Chave inglesa ajustável",
-  scissors: "Tesoura",
   tesoura: "Tesoura",
-  wrench4kml: "Chave inglesa",
+  scissors: "Tesoura",
+  chaveinglesa: "Chave inglesa",
+  wrench: "Chave inglesa",
+  spanner: "Chave inglesa",
 };
 
 export function traduzirClasse(nome: string): DetectionClass {

@@ -16,9 +16,17 @@ SUPABASE_URL=https://<project-ref>.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 MODEL_PATH=models/best.pt
 SECONDARY_MODEL_PATH=models/best2.pt
-FRONTEND_URL=http://localhost:8080
-CORS_ORIGINS=http://localhost:5173,http://localhost:8080
+FRONTEND_URL=https://<dominio-do-frontend>
+CORS_ORIGINS=http://localhost:5173,http://localhost:8080,https://<dominio-do-frontend>
 ```
+
+Em desenvolvimento local, `FRONTEND_URL` pode ser `http://localhost:8080`.
+Convites e pedidos administrativos de redefinição usam a origem do pedido
+quando ela corresponde a uma origem autorizada em `CORS_ORIGINS`; sem uma
+origem válida, usam `FRONTEND_URL`. Por isso, mantenha localhost e o domínio
+publicado na lista `CORS_ORIGINS` quando ambos precisarem funcionar. No
+Supabase, adicione também ambos os endereços de `/redefinir-senha` à lista de
+Redirect URLs autorizados.
 
 O serviço guarda automaticamente cada análise e a imagem original no bucket
 privado. O histórico é consultado por endpoints autenticados: operadores veem

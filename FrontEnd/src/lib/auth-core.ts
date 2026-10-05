@@ -4,7 +4,6 @@ export type UserProfile = {
   id: string;
   nome: string;
   email: string;
-  telefone: string | null;
   role: UserRole;
   ativo: boolean;
 };

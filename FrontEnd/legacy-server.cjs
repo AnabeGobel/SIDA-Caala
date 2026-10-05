@@ -1,4 +1,4 @@
-// server.js
+// Legacy Express server; the deployed app uses the TanStack Start server.
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();

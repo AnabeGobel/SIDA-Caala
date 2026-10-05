@@ -1,7 +1,7 @@
 import logging
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
 from app.auth import CurrentUser, get_current_user, require_roles
@@ -12,6 +12,21 @@ router = APIRouter()
 admin_router = APIRouter(prefix="/admin", dependencies=[Depends(require_roles("admin"))])
 logger = logging.getLogger(__name__)
 ANALYSIS_IMAGE_BUCKET = "analysis-images"
+
+
+def password_reset_redirect_url(request: Request) -> str:
+    allowed_origins = {
+        origin.strip().rstrip("/")
+        for origin in settings.CORS_ORIGINS.split(",")
+        if origin.strip()
+    }
+    request_origin = request.headers.get("origin", "").rstrip("/")
+    frontend_origin = (
+        request_origin
+        if request_origin in allowed_origins
+        else settings.FRONTEND_URL
+    )
+    return f"{frontend_origin}/redefinir-senha"
 
 
 class UserInvite(BaseModel):
@@ -134,10 +149,10 @@ def list_users():
 
 
 @admin_router.post("/users", status_code=status.HTTP_201_CREATED)
-def invite_user(payload: UserInvite):
+def invite_user(payload: UserInvite, request: Request):
     client = get_supabase_client()
     invited_user_id: str | None = None
-    redirect_to = f"{settings.FRONTEND_URL}/redefinir-senha"
+    redirect_to = password_reset_redirect_url(request)
     try:
         invitation = client.auth.admin.invite_user_by_email(
             str(payload.email),
@@ -296,7 +311,7 @@ def delete_user(user_id: str, current_user: CurrentUser = Depends(get_current_us
 
 
 @admin_router.post("/users/{user_id}/reset-access")
-def reset_user_access(user_id: str):
+def reset_user_access(user_id: str, request: Request):
     client = get_supabase_client()
     profile = (
         client.table("profiles")
@@ -310,6 +325,6 @@ def reset_user_access(user_id: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilizador não encontrado.")
 
     client.auth.reset_password_for_email(
-        profile["email"], {"redirect_to": f"{settings.FRONTEND_URL}/redefinir-senha"}
+        profile["email"], {"redirect_to": password_reset_redirect_url(request)}
     )
     return {"message": "Se o e-mail estiver ativo, receberá uma ligação para redefinir a palavra-passe."}
