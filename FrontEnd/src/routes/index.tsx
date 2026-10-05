@@ -1,5 +1,12 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Eye, EyeOff, Lock, Mail, ShieldCheck } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  LoaderCircle,
+  Lock,
+  Mail,
+  ShieldCheck,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import rxLogin from "@/assets/rx-login.jpg";
 import { fetchProfile, roleHome } from "@/lib/auth-core";
@@ -37,6 +44,9 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [ver, setVer] = useState(false);
   const [erro, setErro] = useState("");
+  const [loginStatus, setLoginStatus] = useState<
+    "" | "A verificar credenciais..." | "A carregar o sistema..."
+  >("");
 
   useEffect(() => {
     if (profile) navigate({ to: roleHome(profile.role) });
@@ -46,22 +56,36 @@ function LoginPage() {
     e.preventDefault();
     setErro("");
     if (!supabase) return setErro("A autenticação ainda não está configurada.");
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (error || !data.session)
-      return setErro(error?.message ?? "Não foi possível iniciar sessão.");
+    setLoginStatus("A verificar credenciais...");
     try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error || !data.session) {
+        setErro(error?.message ?? "Não foi possível iniciar sessão.");
+        return;
+      }
+
+      setLoginStatus("A carregar o sistema...");
       const profile = await fetchProfile(data.session.access_token);
       navigate({ to: roleHome(profile.role) });
     } catch (profileError) {
-      await supabase.auth.signOut();
+      try {
+        await supabase.auth.signOut();
+      } catch (signOutError) {
+        console.error(
+          "Não foi possível terminar a sessão inválida.",
+          signOutError,
+        );
+      }
       setErro(
         profileError instanceof Error
           ? profileError.message
           : "A conta não tem um perfil autorizado.",
       );
+    } finally {
+      setLoginStatus("");
     }
   }
 
@@ -168,9 +192,20 @@ function LoginPage() {
 
             <button
               type="submit"
-              className="w-full rounded-lg bg-primary py-3 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+              disabled={Boolean(loginStatus)}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-75"
             >
-              Entrar
+              {loginStatus ? (
+                <>
+                  <LoaderCircle
+                    className="size-4 animate-spin"
+                    aria-hidden="true"
+                  />
+                  {loginStatus}
+                </>
+              ) : (
+                "Entrar"
+              )}
             </button>
 
             <div className="flex items-center justify-between text-sm">
